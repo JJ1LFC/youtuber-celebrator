@@ -75,15 +75,17 @@ def fetch_channel_info(
     """Fetch subscriber count & timestamp for a channel."""
     logging.info(f"Fetching channel info for {desc} ({channel_id})")
     url = f"{API_BASE_URL}/channels"
-    params = {"part": "statistics", "id": channel_id, "key": YOUTUBE_API_KEY}
+    params = {"part": "snippet,statistics", "id": channel_id, "key": YOUTUBE_API_KEY}
     resp = requests.get(url, params=params)
     timestamp = resp.headers.get("Date", datetime.now(timezone.utc).isoformat())
-    items = resp.json().get("items", [])
-    subs = int(items[0]["statistics"].get("subscriberCount", 0)) if items else 0
+    data = resp.json().get("items", [])
+    item = data[0] if data else {}
+    subs = int(item.get("statistics", {}).get("subscriberCount", 0))
+    title = item.get("snippet", {}).get("title", desc)
     logging.info(f"Fetched subscriber_count={subs} for {channel_id}")
     return {
         "channel_id": channel_id,
-        "desc": desc,
+        "title": title,
         "subscriber_count": subs,
         "timestamp": timestamp,
         "twitter_enabled": twitter_enabled
@@ -197,7 +199,7 @@ def compare_and_notify(
             if prev_cnt < thr <= curr_cnt:
                 msg = (
                     f"【🎉チャンネル登録 {thr} 人突破🎉】\n\n"
-                    f"YouTube チャンネル「{ch['desc']}」の登録者数が {thr} 人を突破しました🎉🎉\n\n"
+                    f"YouTube チャンネル「{ch['title']}」の登録者数が {thr} 人を突破しました🎉🎉\n\n"
                     f"https://www.youtube.com/channel/{ch['channel_id']}"
                 )
                 send_discord_notification(msg)

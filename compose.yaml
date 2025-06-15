@@ -3,7 +3,7 @@ services:
     container_name: youtuber-celebrator
     build: .
     image: youtube-celebrator:latest
-    restart: unless-stopped
+      #    restart: unless-stopped
     env_file:
       - .env
     volumes:
