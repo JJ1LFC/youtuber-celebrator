@@ -1,4 +1,3 @@
-````markdown
 # YouTube Monitoring Bot
 
 ## Overview
