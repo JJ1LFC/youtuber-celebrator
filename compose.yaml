@@ -1,0 +1,13 @@
+services:
+  youtuber-celebrator:
+    container_name: youtuber-celebrator
+    build: .
+    image: youtube-celebrator:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./config.json:/app/config.json:ro
+      - ./data:/app/data:rw
+      - ./log:/app/log:rw
+

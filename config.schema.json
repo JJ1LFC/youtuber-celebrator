@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "YouTuber Monitor Config Schema",
+  "type": "object",
+  "properties": {
+    "subscriber_thresholds": {
+      "type": "array",
+      "items": { "type": "integer", "minimum": 0 },
+      "description": "List of threshold for subscribers"
+    },
+    "view_thresholds": {
+      "type": "array",
+      "items": { "type": "integer", "minimum": 0 },
+      "description": "List of threshold for played times"
+    },
+    "channels": {
+      "type": "array",
+      "description": "List of monitoring Channels",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "desc": { "type": "string", "description": "人間向けの説明" }
+        },
+        "required": ["id", "desc"]
+      }
+    },
+    "playlists": {
+      "type": "array",
+      "description": "List of monitoring Playlists",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "desc": { "type": "string", "description": "人間向けの説明" }
+        },
+        "required": ["id", "desc"]
+      }
+    }
+  },
+  "required": [
+    "output_file",
+    "subscriber_thresholds",
+    "view_thresholds",
+    "channels",
+    "playlists"
+  ],
+  "additionalProperties": false
+}
+
