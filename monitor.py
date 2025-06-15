@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 import schedule
+from requests_oauthlib import OAuth1
 
 # Logging configuration
 logging.basicConfig(
@@ -18,16 +19,29 @@ logging.basicConfig(
     datefmt='%Y-%m-%dT%H:%M:%S%z'
 )
 
+# Environment variables
 YOUTUBE_API_KEY: Optional[str] = os.getenv("YOUTUBE_API_KEY")
 DISCORD_WEBHOOK_URL: Optional[str] = os.getenv("DISCORD_WEBHOOK_URL")
+
+# Twitter API credentials
+TWITTER_CONSUMER_KEY = os.getenv("TWITTER_CONSUMER_KEY")
+TWITTER_CONSUMER_SECRET = os.getenv("TWITTER_CONSUMER_SECRET")
+TWITTER_ACCESS_TOKEN = os.getenv("TWITTER_ACCESS_TOKEN")
+TWITTER_ACCESS_SECRET = os.getenv("TWITTER_ACCESS_SECRET")
+
 API_BASE_URL: str = "https://www.googleapis.com/youtube/v3"
 
 
-def load_json(filepath: str) -> Dict[str, Any]:
-    """Load JSON data from a file.
+def twitter_auth() -> OAuth1:
+    return OAuth1(
+        TWITTER_CONSUMER_KEY,
+        TWITTER_CONSUMER_SECRET,
+        TWITTER_ACCESS_TOKEN,
+        TWITTER_ACCESS_SECRET
+    )
 
-    If the file is empty or invalid, return an empty dict.
-    """
+
+def load_json(filepath: str) -> Dict[str, Any]:
     logging.info(f"Loading JSON from {filepath}")
     try:
         with open(filepath, "r", encoding="utf-8") as f:
@@ -40,50 +54,53 @@ def load_json(filepath: str) -> Dict[str, Any]:
 
 
 def save_json(data: Dict[str, Any], filepath: str) -> None:
-    """Save a dict as JSON to a file."""
     logging.info(f"Saving JSON to {filepath}")
     with open(filepath, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     logging.info("JSON saved successfully")
 
 
-def fetch_channel_info(channel_id: str, desc: str) -> Dict[str, Any]:
-    """Fetch subscriber count & timestamp for a channel."""
+def fetch_video_view_count(video_id: str) -> int:
+    logging.info(f"Fetching view count for video {video_id}")
+    url = f"{API_BASE_URL}/videos"
+    params = {"part": "statistics", "id": video_id, "key": YOUTUBE_API_KEY}
+    resp = requests.get(url, params=params)
+    items = resp.json().get("items", [])
+    if not items:
+        logging.warning(f"No statistics for video {video_id}")
+        return 0
+    count = int(items[0]["statistics"].get("viewCount", 0))
+    logging.info(f"View count for {video_id}: {count}")
+    return count
+
+
+def fetch_channel_info(
+    channel_id: str,
+    desc: str,
+    twitter_enabled: bool = False
+) -> Dict[str, Any]:
     logging.info(f"Fetching channel info for {desc} ({channel_id})")
     url = f"{API_BASE_URL}/channels"
     params = {"part": "statistics", "id": channel_id, "key": YOUTUBE_API_KEY}
     resp = requests.get(url, params=params)
     timestamp = resp.headers.get("Date", datetime.now(timezone.utc).isoformat())
-    data = resp.json()
-    items = data.get("items", [])
-    if not items:
-        logging.warning(f"No channel data for {channel_id}, returning zero subscriber count")
-        return {"channel_id": channel_id, "desc": desc, "subscriber_count": 0, "timestamp": timestamp}
-    stats = items[0]["statistics"]
-    result = {"channel_id": channel_id, "desc": desc, "subscriber_count": int(stats.get("subscriberCount", 0)), "timestamp": timestamp}
-    logging.info(f"Fetched subscriber_count={result['subscriber_count']} for {channel_id}")
-    return result
+    items = resp.json().get("items", [])
+    subs = int(items[0]["statistics"].get("subscriberCount", 0)) if items else 0
+    logging.info(f"Fetched subscriber_count={subs} for {channel_id}")
+    return {
+        "channel_id": channel_id,
+        "desc": desc,
+        "subscriber_count": subs,
+        "timestamp": timestamp,
+        "twitter_enabled": twitter_enabled
+    }
 
 
-def fetch_video_view_count(video_id: str) -> int:
-    """Fetch a video's view count."""
-    logging.info(f"Fetching view count for video {video_id}")
-    url = f"{API_BASE_URL}/videos"
-    params = {"part": "statistics", "id": video_id, "key": YOUTUBE_API_KEY}
-    resp = requests.get(url, params=params)
-    data = resp.json()
-    items = data.get("items", [])
-    if not items:
-        logging.warning(f"No statistics found for video {video_id}, returning zero view count")
-        return 0
-    stats = items[0]["statistics"]
-    count = int(stats.get("viewCount", 0))
-    logging.info(f"View count for {video_id}: {count}")
-    return count
-
-
-def fetch_playlist_videos(playlist_id: str, desc: str) -> List[Dict[str, Any]]:
-    """Fetch videos in a playlist with stats & timestamp."""
+def fetch_playlist_videos(
+    playlist_id: str,
+    desc: str,
+    twitter_enabled: bool = False
+) -> List[Dict[str, Any]]:
     logging.info(f"Fetching playlist videos for {desc} ({playlist_id})")
     videos: List[Dict[str, Any]] = []
     url = f"{API_BASE_URL}/playlistItems"
@@ -92,8 +109,8 @@ def fetch_playlist_videos(playlist_id: str, desc: str) -> List[Dict[str, Any]]:
     while True:
         resp = requests.get(url, params=params)
         timestamp = resp.headers.get("Date", datetime.now(timezone.utc).isoformat())
-        data = resp.json()
-        for item in data.get("items", []):
+        items = resp.json().get("items", [])
+        for item in items:
             vid = item["contentDetails"]["videoId"]
             title = item["snippet"].get("title", "")
             view_count = fetch_video_view_count(vid)
@@ -105,33 +122,53 @@ def fetch_playlist_videos(playlist_id: str, desc: str) -> List[Dict[str, Any]]:
                 "timestamp": timestamp,
                 "playlist_id": playlist_id,
                 "playlist_desc": desc,
+                "twitter_enabled": twitter_enabled
             })
             time.sleep(1)
-        next_token = data.get("nextPageToken")
+        next_token = resp.json().get("nextPageToken")
         if not next_token:
             break
         params["pageToken"] = next_token
+
     logging.info(f"Fetched {len(videos)} videos from playlist {playlist_id}")
     return videos
 
 
 def send_discord_notification(message: str) -> None:
-    """Send a message to Discord via webhook."""
     logging.info(f"Sending Discord notification: {message}")
     if not DISCORD_WEBHOOK_URL:
-        logging.warning("DISCORD_WEBHOOK_URL not set, skipping notification")
+        logging.warning("Discord webhook URL not set, skipping notification")
         return
-    payload = {"content": message}
-    requests.post(DISCORD_WEBHOOK_URL, json=payload)
+    requests.post(DISCORD_WEBHOOK_URL, json={"content": message})
     logging.info("Discord notification sent")
-    time.sleep(1)
+    time.sleep(1)  # avoid rate limit
 
 
-def compare_and_notify(prev: Dict[str, Any], curr_ch: List[Dict[str, Any]], curr_vd: List[Dict[str, Any]], cfg: Dict[str, Any]) -> None:
-    """Compare previous vs current and notify threshold, added/removed items."""
+def send_twitter_notification(tweet: str) -> None:
+    if not all([TWITTER_CONSUMER_KEY, TWITTER_CONSUMER_SECRET, TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_SECRET]):
+        logging.warning("Twitter credentials missing, skipping tweet")
+        return
+    url = "https://api.twitter.com/1.1/statuses/update.json"
+    auth = twitter_auth()
+    resp = requests.post(url, auth=auth, params={"status": tweet})
+    if resp.status_code == 200:
+        logging.info("Tweet posted successfully")
+    else:
+        logging.error(f"Failed to post tweet: {resp.status_code} {resp.text}")
+    time.sleep(1)  # avoid rate limit
+
+
+def compare_and_notify(
+    prev: Dict[str, Any],
+    curr_ch: List[Dict[str, Any]],
+    curr_vd: List[Dict[str, Any]],
+    cfg: Dict[str, Any]
+) -> None:
     logging.info("Starting comparison and notification step")
     prev_ch_map = {c["channel_id"]: c["subscriber_count"] for c in prev.get("channels", [])}
-    prev_vid_map = {v["video_id"]: v["view_count"] for v in prev.get("videos", [])}
+    prev_vid_map = {v["video_id"]: v["view_count"]       for v in prev.get("videos", [])}
+
+    # Detect new/removed videos (Discord only)
     prev_ids = set(prev_vid_map.keys())
     curr_ids = {v["video_id"] for v in curr_vd}
 
@@ -145,54 +182,81 @@ def compare_and_notify(prev: Dict[str, Any], curr_ch: List[Dict[str, Any]], curr
             f"🗑️ Video removed: {vid} removed from playlist."
         )
 
-    sub_thrs = cfg.get("subscriber_thresholds", [])
-    view_thrs = cfg.get("view_thresholds", [])
-    logging.info(f"Loaded subscriber_thresholds: {sub_thrs}")
-    logging.info(f"Loaded view_thresholds: {view_thrs}")
-
+    # Channel thresholds
     for ch in curr_ch:
         prev_cnt = prev_ch_map.get(ch["channel_id"], 0)
         curr_cnt = ch["subscriber_count"]
-        for thr in sub_thrs:
+        for thr in cfg.get("subscriber_thresholds", []):
             if prev_cnt < thr <= curr_cnt:
-                send_discord_notification(
-                    f"🎉 Channel '{ch['desc']}' ({ch['channel_id']}) surpassed {thr} subscribers! Current: {curr_cnt}.\nhttps://www.youtube.com/channel/{ch['channel_id']}"
+                msg = (
+                    f"🎉 Channel '{ch['desc']}' ({ch['channel_id']}) surpassed {thr} subscribers! Current: {curr_cnt}.\n"
+                    f"https://www.youtube.com/channel/{ch['channel_id']}"
                 )
+                send_discord_notification(msg)
+                if ch.get("twitter_enabled"):
+                    tweet = (
+                        f"【🎉チャンネル登録 {thr} 人突破🎉】\n\n"
+                        f"YouTube チャンネル「{ch['desc']}」の登録者数が {thr} 人を突破しました🎉🎉\n\n"
+                        f"https://www.youtube.com/channel/{ch['channel_id']}"
+                    )
+                    send_twitter_notification(tweet)
 
+    # Video thresholds
     for vd in curr_vd:
         prev_v = prev_vid_map.get(vd["video_id"], 0)
         curr_v = vd["view_count"]
-        for thr in view_thrs:
+        for thr in cfg.get("view_thresholds", []):
             if prev_v < thr <= curr_v:
-                send_discord_notification(
-                    f"🎉 Video '{vd['title']}' ({vd['video_id']}) surpassed {thr} views! Current: {curr_v}.\n{vd['url']}"
+                msg = (
+                    f"🎉 Video '{vd['title']}' ({vd['video_id']}) surpassed {thr} views! Current: {curr_v}.\n"
+                    f"{vd['url']}"
                 )
+                send_discord_notification(msg)
+                if vd.get("twitter_enabled"):
+                    tweet = (
+                        f"【🎉再生回数 {thr} 回突破🎉】\n\n"
+                        f"歌動画「{vd['title']}」の総再生回数が {thr} 回を突破しました🎉🎉\n\n"
+                        f"{vd['url']}"
+                    )
+                    send_twitter_notification(tweet)
+
     logging.info("Comparison and notification step completed")
 
 
 def main() -> None:
     logging.info("=== Script start ===")
-    cfg = load_json("config.json")
+    cfg      = load_json("config.json")
     out_file = "/app/data/data.json"
     prev_data = load_json(out_file)
-    initial_run = not prev_data.get("channels") and not prev_data.get("videos")
-    if initial_run:
+
+    # Initial run
+    if not prev_data.get("channels") and not prev_data.get("videos"):
         logging.info("Initial run: skipping notifications.")
-        curr_ch = [fetch_channel_info(ch.get("id"), ch.get("desc")) for ch in cfg.get("channels", [])]
+        curr_ch = [
+            fetch_channel_info(ch['id'], ch['desc'], ch.get('twitter_enabled', False))
+            for ch in cfg.get("channels", [])
+        ]
         time.sleep(1)
-        curr_vd = []
-        for pl in cfg.get("playlists", []): curr_vd.extend(fetch_playlist_videos(pl.get("id"), pl.get("desc")))
+        curr_vd: List[Dict[str, Any]] = []
+        for pl in cfg.get("playlists", []):
+            curr_vd.extend(fetch_playlist_videos(pl['id'], pl['desc'], pl.get('twitter_enabled', False)))
         save_json({"channels": curr_ch, "videos": curr_vd}, out_file)
         logging.info("Initial state saved.")
         return
 
-    curr_ch = [fetch_channel_info(ch.get("id"), ch.get("desc")) for ch in cfg.get("channels", [])]
+    # Normal execution
+    curr_ch = [
+        fetch_channel_info(ch['id'], ch['desc'], ch.get('twitter_enabled', False))
+        for ch in cfg.get("channels", [])
+    ]
     time.sleep(1)
-    curr_vd = []
-    for pl in cfg.get("playlists", []): curr_vd.extend(fetch_playlist_videos(pl.get("id"), pl.get("desc")))
+    curr_vd: List[Dict[str, Any]] = []
+    for pl in cfg.get("playlists", []):
+        curr_vd.extend(fetch_playlist_videos(pl['id'], pl['desc'], pl.get('twitter_enabled', False)))
     compare_and_notify(prev_data, curr_ch, curr_vd, cfg)
     save_json({"channels": curr_ch, "videos": curr_vd}, out_file)
     logging.info("=== Script end ===")
+
 
 if __name__ == "__main__":
     schedule.every().hour.at(":00").do(main)

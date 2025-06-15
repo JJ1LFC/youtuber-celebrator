@@ -5,13 +5,13 @@
   "properties": {
     "subscriber_thresholds": {
       "type": "array",
-      "items": { "type": "integer", "minimum": 0 },
+      "items": { "type": "integer", "minimum": 1 },
       "description": "List of threshold for subscribers"
     },
     "view_thresholds": {
       "type": "array",
-      "items": { "type": "integer", "minimum": 0 },
-      "description": "List of threshold for played times"
+      "items": { "type": "integer", "minimum": 1 },
+      "description": "List of threshold for view counts"
     },
     "channels": {
       "type": "array",
@@ -20,9 +20,10 @@
         "type": "object",
         "properties": {
           "id": { "type": "string" },
-          "desc": { "type": "string", "description": "人間向けの説明" }
+          "desc": { "type": "string", "description": "human-friendly name" },
+          "twitter_enabled": {"type": "boolean"}
         },
-        "required": ["id", "desc"]
+        "required": ["id", "desc", "twitter_enabled"]
       }
     },
     "playlists": {
@@ -32,9 +33,10 @@
         "type": "object",
         "properties": {
           "id": { "type": "string" },
-          "desc": { "type": "string", "description": "人間向けの説明" }
+          "desc": { "type": "string", "description": "human-friendly name" }
+          "twitter_enabled": {"type": "boolean"}
         },
-        "required": ["id", "desc"]
+        "required": ["id", "desc", "twitter_enabled"]
       }
     }
   },
