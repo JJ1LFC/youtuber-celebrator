@@ -20,28 +20,19 @@ logging.basicConfig(
 )
 
 # Environment variables
-YOUTUBE_API_KEY: Optional[str] = os.getenv("YOUTUBE_API_KEY")
-DISCORD_WEBHOOK_URL: Optional[str] = os.getenv("DISCORD_WEBHOOK_URL")
+YOUTUBE_API_KEY: Optional[str]      = os.getenv("YOUTUBE_API_KEY")
+DISCORD_WEBHOOK_URL: Optional[str]  = os.getenv("DISCORD_WEBHOOK_URL")
+TWITTER_CONSUMER_KEY: Optional[str]        = os.getenv("TWITTER_CONSUMER_KEY")
+TWITTER_CONSUMER_SECRET: Optional[str]     = os.getenv("TWITTER_CONSUMER_SECRET")
+TWITTER_ACCESS_TOKEN: Optional[str]        = os.getenv("TWITTER_ACCESS_TOKEN")
+TWITTER_ACCESS_SECRET: Optional[str]       = os.getenv("TWITTER_ACCESS_SECRET")
 
-# Twitter API credentials
-TWITTER_CONSUMER_KEY = os.getenv("TWITTER_CONSUMER_KEY")
-TWITTER_CONSUMER_SECRET = os.getenv("TWITTER_CONSUMER_SECRET")
-TWITTER_ACCESS_TOKEN = os.getenv("TWITTER_ACCESS_TOKEN")
-TWITTER_ACCESS_SECRET = os.getenv("TWITTER_ACCESS_SECRET")
-
-API_BASE_URL: str = "https://www.googleapis.com/youtube/v3"
-
-
-def twitter_auth() -> OAuth1:
-    return OAuth1(
-        TWITTER_CONSUMER_KEY,
-        TWITTER_CONSUMER_SECRET,
-        TWITTER_ACCESS_TOKEN,
-        TWITTER_ACCESS_SECRET
-    )
+API_BASE_URL       = "https://www.googleapis.com/youtube/v3"
+TWITTER_API_V2_URL = "https://api.twitter.com/2/tweets"
 
 
 def load_json(filepath: str) -> Dict[str, Any]:
+    """Load JSON data from a file."""
     logging.info(f"Loading JSON from {filepath}")
     try:
         with open(filepath, "r", encoding="utf-8") as f:
@@ -54,6 +45,7 @@ def load_json(filepath: str) -> Dict[str, Any]:
 
 
 def save_json(data: Dict[str, Any], filepath: str) -> None:
+    """Save a dict as JSON to a file."""
     logging.info(f"Saving JSON to {filepath}")
     with open(filepath, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
@@ -61,6 +53,7 @@ def save_json(data: Dict[str, Any], filepath: str) -> None:
 
 
 def fetch_video_view_count(video_id: str) -> int:
+    """Fetch a video's view count."""
     logging.info(f"Fetching view count for video {video_id}")
     url = f"{API_BASE_URL}/videos"
     params = {"part": "statistics", "id": video_id, "key": YOUTUBE_API_KEY}
@@ -79,6 +72,7 @@ def fetch_channel_info(
     desc: str,
     twitter_enabled: bool = False
 ) -> Dict[str, Any]:
+    """Fetch subscriber count & timestamp for a channel."""
     logging.info(f"Fetching channel info for {desc} ({channel_id})")
     url = f"{API_BASE_URL}/channels"
     params = {"part": "statistics", "id": channel_id, "key": YOUTUBE_API_KEY}
@@ -101,10 +95,16 @@ def fetch_playlist_videos(
     desc: str,
     twitter_enabled: bool = False
 ) -> List[Dict[str, Any]]:
+    """Fetch videos in a playlist with stats & timestamp."""
     logging.info(f"Fetching playlist videos for {desc} ({playlist_id})")
     videos: List[Dict[str, Any]] = []
     url = f"{API_BASE_URL}/playlistItems"
-    params = {"part": "snippet,contentDetails", "playlistId": playlist_id, "maxResults": 50, "key": YOUTUBE_API_KEY}
+    params = {
+        "part": "snippet,contentDetails",
+        "playlistId": playlist_id,
+        "maxResults": 50,
+        "key": YOUTUBE_API_KEY
+    }
 
     while True:
         resp = requests.get(url, params=params)
@@ -135,6 +135,7 @@ def fetch_playlist_videos(
 
 
 def send_discord_notification(message: str) -> None:
+    """Send a message to Discord via webhook."""
     logging.info(f"Sending Discord notification: {message}")
     if not DISCORD_WEBHOOK_URL:
         logging.warning("Discord webhook URL not set, skipping notification")
@@ -144,14 +145,20 @@ def send_discord_notification(message: str) -> None:
     time.sleep(1)  # avoid rate limit
 
 
-def send_twitter_notification(tweet: str) -> None:
+def send_twitter_notification(text: str) -> None:
+    """Post a tweet via Twitter API v2 using OAuth1.0a user context."""
     if not all([TWITTER_CONSUMER_KEY, TWITTER_CONSUMER_SECRET, TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_SECRET]):
         logging.warning("Twitter credentials missing, skipping tweet")
         return
-    url = "https://api.twitter.com/1.1/statuses/update.json"
-    auth = twitter_auth()
-    resp = requests.post(url, auth=auth, params={"status": tweet})
-    if resp.status_code == 200:
+    auth = OAuth1(
+        TWITTER_CONSUMER_KEY,
+        TWITTER_CONSUMER_SECRET,
+        TWITTER_ACCESS_TOKEN,
+        TWITTER_ACCESS_SECRET
+    )
+    payload = {"text": text}
+    resp = requests.post(TWITTER_API_V2_URL, auth=auth, json=payload)
+    if resp.status_code == 201:
         logging.info("Tweet posted successfully")
     else:
         logging.error(f"Failed to post tweet: {resp.status_code} {resp.text}")
@@ -164,14 +171,14 @@ def compare_and_notify(
     curr_vd: List[Dict[str, Any]],
     cfg: Dict[str, Any]
 ) -> None:
+    """Compare previous vs current and notify threshold, added/removed items."""
     logging.info("Starting comparison and notification step")
     prev_ch_map = {c["channel_id"]: c["subscriber_count"] for c in prev.get("channels", [])}
-    prev_vid_map = {v["video_id"]: v["view_count"]       for v in prev.get("videos", [])}
+    prev_vid_map = {v["video_id"]: v["view_count"] for v in prev.get("videos", [])}
 
     # Detect new/removed videos (Discord only)
     prev_ids = set(prev_vid_map.keys())
     curr_ids = {v["video_id"] for v in curr_vd}
-
     for vid in curr_ids - prev_ids:
         vd = next(v for v in curr_vd if v["video_id"] == vid)
         send_discord_notification(
@@ -189,17 +196,13 @@ def compare_and_notify(
         for thr in cfg.get("subscriber_thresholds", []):
             if prev_cnt < thr <= curr_cnt:
                 msg = (
-                    f"🎉 Channel '{ch['desc']}' ({ch['channel_id']}) surpassed {thr} subscribers! Current: {curr_cnt}.\n"
+                    f"【🎉チャンネル登録 {thr} 人突破🎉】\n\n"
+                    f"YouTube チャンネル「{ch['desc']}」の登録者数が {thr} 人を突破しました🎉🎉\n\n"
                     f"https://www.youtube.com/channel/{ch['channel_id']}"
                 )
                 send_discord_notification(msg)
                 if ch.get("twitter_enabled"):
-                    tweet = (
-                        f"【🎉チャンネル登録 {thr} 人突破🎉】\n\n"
-                        f"YouTube チャンネル「{ch['desc']}」の登録者数が {thr} 人を突破しました🎉🎉\n\n"
-                        f"https://www.youtube.com/channel/{ch['channel_id']}"
-                    )
-                    send_twitter_notification(tweet)
+                    send_twitter_notification(msg)
 
     # Video thresholds
     for vd in curr_vd:
@@ -208,31 +211,27 @@ def compare_and_notify(
         for thr in cfg.get("view_thresholds", []):
             if prev_v < thr <= curr_v:
                 msg = (
-                    f"🎉 Video '{vd['title']}' ({vd['video_id']}) surpassed {thr} views! Current: {curr_v}.\n"
+                    f"【🎉再生回数 {thr} 回突破🎉】\n\n"
+                    f"歌動画「{vd['title']}」の総再生回数が {thr} 回を突破しました🎉🎉\n\n"
                     f"{vd['url']}"
                 )
                 send_discord_notification(msg)
                 if vd.get("twitter_enabled"):
-                    tweet = (
-                        f"【🎉再生回数 {thr} 回突破🎉】\n\n"
-                        f"歌動画「{vd['title']}」の総再生回数が {thr} 回を突破しました🎉🎉\n\n"
-                        f"{vd['url']}"
-                    )
-                    send_twitter_notification(tweet)
+                    send_twitter_notification(msg)
 
     logging.info("Comparison and notification step completed")
 
 
 def main() -> None:
     logging.info("=== Script start ===")
-    cfg      = load_json("config.json")
-    out_file = "/app/data/data.json"
+    cfg       = load_json("config.json")
+    out_file  = "/app/data/data.json"
     prev_data = load_json(out_file)
 
     # Initial run
     if not prev_data.get("channels") and not prev_data.get("videos"):
         logging.info("Initial run: skipping notifications.")
-        curr_ch = [
+        curr_ch: List[Dict[str, Any]] = [
             fetch_channel_info(ch['id'], ch['desc'], ch.get('twitter_enabled', False))
             for ch in cfg.get("channels", [])
         ]
@@ -253,6 +252,7 @@ def main() -> None:
     curr_vd: List[Dict[str, Any]] = []
     for pl in cfg.get("playlists", []):
         curr_vd.extend(fetch_playlist_videos(pl['id'], pl['desc'], pl.get('twitter_enabled', False)))
+
     compare_and_notify(prev_data, curr_ch, curr_vd, cfg)
     save_json({"channels": curr_ch, "videos": curr_vd}, out_file)
     logging.info("=== Script end ===")

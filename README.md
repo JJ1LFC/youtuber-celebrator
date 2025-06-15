@@ -14,10 +14,10 @@ Store these in a `.env` file or export in your shell:
 ```bash
 YOUTUBE_API_KEY=<Your YouTube Data API v3 Key>
 DISCORD_WEBHOOK_URL=<Your Discord Webhook URL>
-TWITTER_CONSUMER_KEY=<your_consumer_key>
-TWITTER_CONSUMER_SECRET=<your_consumer_secret>
-TWITTER_ACCESS_TOKEN=<your_access_token>
-TWITTER_ACCESS_SECRET=<your_access_secret>
+TWITTER_CONSUMER_KEY=hoge
+TWITTER_CONSUMER_SECRET=hoge
+TWITTER_ACCESS_TOKEN=hoge
+TWITTER_ACCESS_SECRET=hoge
 ```
 
 ## Configuration (`config.json`)
