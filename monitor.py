@@ -124,7 +124,6 @@ def send_discord_notification(message: str) -> None:
     payload = {"content": message}
     requests.post(DISCORD_WEBHOOK_URL, json=payload)
     logging.info("Discord notification sent")
-    # Wait 1 second after Discord notification to avoid rate limiting
     time.sleep(1)
 
 
@@ -133,101 +132,71 @@ def compare_and_notify(prev: Dict[str, Any], curr_ch: List[Dict[str, Any]], curr
     logging.info("Starting comparison and notification step")
     prev_ch_map = {c["channel_id"]: c["subscriber_count"] for c in prev.get("channels", [])}
     prev_vid_map = {v["video_id"]: v["view_count"] for v in prev.get("videos", [])}
-
     prev_ids = set(prev_vid_map.keys())
     curr_ids = {v["video_id"] for v in curr_vd}
 
-    # Detect newly added videos
     for vid in curr_ids - prev_ids:
         vd = next(v for v in curr_vd if v["video_id"] == vid)
         send_discord_notification(
-            f"➕ New video detected: [{vd['playlist_desc']}] '{vd['title']}' ({vid}) is now monitored. Current views: {vd['view_count']}."
+            f"➕ New video detected: [{vd['playlist_desc']}] '{vd['title']}' ({vid}) monitored.\n{vd['url']}"
+        )
+    for vid in prev_ids - curr_ids:
+        send_discord_notification(
+            f"🗑️ Video removed: {vid} removed from playlist."
         )
 
-    # Detect removed videos
-    for vid in prev_ids - curr_ids:
-        send_discord_notification(f"🗑️ Video removed: ID {vid} has been excluded from the playlist.")
-
-    # Retrieve threshold lists
     sub_thrs = cfg.get("subscriber_thresholds", [])
     view_thrs = cfg.get("view_thresholds", [])
-    if not sub_thrs:
-        logging.warning("No 'subscriber_thresholds' in config, skipping subscriber checks")
-    if not view_thrs:
-        logging.warning("No 'view_thresholds' in config, skipping view count checks")
+    logging.info(f"Loaded subscriber_thresholds: {sub_thrs}")
+    logging.info(f"Loaded view_thresholds: {view_thrs}")
 
-    # Subscriber threshold notifications
     for ch in curr_ch:
         prev_cnt = prev_ch_map.get(ch["channel_id"], 0)
         curr_cnt = ch["subscriber_count"]
         for thr in sub_thrs:
             if prev_cnt < thr <= curr_cnt:
                 send_discord_notification(
-                    f"🎉 Milestone reached: Channel '{ch['desc']}' ({ch['channel_id']}) surpassed {thr} subscribers! Current: {curr_cnt}."
+                    f"🎉 Channel '{ch['desc']}' ({ch['channel_id']}) surpassed {thr} subscribers! Current: {curr_cnt}.\nhttps://www.youtube.com/channel/{ch['channel_id']}"
                 )
 
-    # View count threshold notifications
     for vd in curr_vd:
         prev_v = prev_vid_map.get(vd["video_id"], 0)
         curr_v = vd["view_count"]
         for thr in view_thrs:
             if prev_v < thr <= curr_v:
                 send_discord_notification(
-                    f"🎉 Milestone reached: Video '{vd['title']}' ({vd['video_id']}) surpassed {thr} views! Current: {curr_v}."
+                    f"🎉 Video '{vd['title']}' ({vd['video_id']}) surpassed {thr} views! Current: {curr_v}.\n{vd['url']}"
                 )
     logging.info("Comparison and notification step completed")
 
 
 def main() -> None:
-    """Main entrypoint: load config, fetch data, compare, and save state."""
     logging.info("=== Script start ===")
     cfg = load_json("config.json")
     out_file = "/app/data/data.json"
-
-    # Load previous state
     prev_data = load_json(out_file)
-    # Skip notifications if initial run (no existing data)
     initial_run = not prev_data.get("channels") and not prev_data.get("videos")
     if initial_run:
-        logging.info("Initial run detected: skipping notifications.")
-        # On initial run, fetch data and save only, no notifications
-        curr_ch: List[Dict[str, Any]] = []
-        for ch in cfg.get("channels", []):
-            curr_ch.append(fetch_channel_info(ch.get("id", ""), ch.get("desc", "")))
-            time.sleep(1)
-        curr_vd: List[Dict[str, Any]] = []
-        for pl in cfg.get("playlists", []):
-            curr_vd.extend(fetch_playlist_videos(pl.get("id", ""), pl.get("desc", "")))
+        logging.info("Initial run: skipping notifications.")
+        curr_ch = [fetch_channel_info(ch.get("id"), ch.get("desc")) for ch in cfg.get("channels", [])]
+        time.sleep(1)
+        curr_vd = []
+        for pl in cfg.get("playlists", []): curr_vd.extend(fetch_playlist_videos(pl.get("id"), pl.get("desc")))
         save_json({"channels": curr_ch, "videos": curr_vd}, out_file)
-        logging.info("Initial state saved. Exiting.")
+        logging.info("Initial state saved.")
         return
 
-    # Normal execution flow
-    logging.info("Fetching channel information...")
-    curr_ch: List[Dict[str, Any]] = []
-    for ch in cfg.get("channels", []):
-        curr_ch.append(fetch_channel_info(ch.get("id", ""), ch.get("desc", "")))
-        time.sleep(1)
-    logging.info("Channel information fetched")
-
-    logging.info("Fetching playlist videos...")
-    curr_vd: List[Dict[str, Any]] = []
-    for pl in cfg.get("playlists", []):
-        curr_vd.extend(fetch_playlist_videos(pl.get("id", ""), pl.get("desc", "")))
-    logging.info("Playlist videos fetched")
-
+    curr_ch = [fetch_channel_info(ch.get("id"), ch.get("desc")) for ch in cfg.get("channels", [])]
+    time.sleep(1)
+    curr_vd = []
+    for pl in cfg.get("playlists", []): curr_vd.extend(fetch_playlist_videos(pl.get("id"), pl.get("desc")))
     compare_and_notify(prev_data, curr_ch, curr_vd, cfg)
-
-    logging.info("Saving new state...")
     save_json({"channels": curr_ch, "videos": curr_vd}, out_file)
     logging.info("=== Script end ===")
 
-def job():
-    main()
-
 if __name__ == "__main__":
-    job()
-    schedule.every().hour.at(":00").do(job)
+    schedule.every().hour.at(":00").do(main)
+    main()
     while True:
         schedule.run_pending()
         time.sleep(1)
