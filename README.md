@@ -66,12 +66,3 @@ To stop:
 docker compose down
 ```
 
-## Logs
-
-All important steps and notifications are logged with timestamps.
-
-```bash
-tail -f monitor.log
-```
-
-
