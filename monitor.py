@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import requests
+import schedule
 
 # Logging configuration
 logging.basicConfig(
@@ -221,6 +222,13 @@ def main() -> None:
     save_json({"channels": curr_ch, "videos": curr_vd}, out_file)
     logging.info("=== Script end ===")
 
-if __name__ == "__main__":
+def job():
     main()
+
+if __name__ == "__main__":
+    job()
+    schedule.every().hour.at(":00").do(job)
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
 

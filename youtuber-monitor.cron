@@ -1,3 +1,0 @@
-# /etc/cron.d/youtube-monitor
-0 * * * * root /usr/local/bin/python /app/monitor.py >> /app/data/monitor.log 2>&1
-
