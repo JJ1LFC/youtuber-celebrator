@@ -33,7 +33,7 @@
         "type": "object",
         "properties": {
           "id": { "type": "string" },
-          "desc": { "type": "string", "description": "human-friendly name" }
+          "desc": { "type": "string", "description": "human-friendly name" },
           "twitter_enabled": {"type": "boolean"}
         },
         "required": ["id", "desc", "twitter_enabled"]
