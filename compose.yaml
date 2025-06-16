@@ -9,5 +9,4 @@ services:
     volumes:
       - ./config.json:/app/config.json:ro
       - ./data:/app/data:rw
-      - ./log:/app/log:rw
 

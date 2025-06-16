@@ -1,19 +1,25 @@
-# YouTube Monitoring Bot
+# YouTubeer Milestone Celebrating Bot
 
 ## Overview
-A tool that monitors YouTube channel subscriber counts and playlist video view counts, detects milestones and playlist changes, and sends notifications to Discord.
+A tool that monitors YouTube channel subscriber counts and playlist video view counts, detects milestones, and sends notifications to Discord (and optionally to Twitter).
 
 ## Requirements
 - Python ≥ 3.8 (in Docker, 3.12 by default)
 - Docker (optional)
 - Docker Compose (optional)
 
-## Environment Variables
-Store these in a `.env` file or export in your shell:
+## Preparation
+You will need
+- Google Cloud API Key with YouTube Data API v3 enabled
+- Discord Webhook URL to which you would like to send notification
+- (Optional) Twitter API v2 Keys of the account you would like to auto-post notification.
 
-```bash
-YOUTUBE_API_KEY=<Your YouTube Data API v3 Key>
-DISCORD_WEBHOOK_URL=<Your Discord Webhook URL>
+## Setup Environment Variables
+Store these in a `.env` file:
+
+```env
+YOUTUBE_API_KEY=hoge
+DISCORD_WEBHOOK_URL=hoge
 TWITTER_CONSUMER_KEY=hoge
 TWITTER_CONSUMER_SECRET=hoge
 TWITTER_ACCESS_TOKEN=hoge
@@ -22,47 +28,40 @@ TWITTER_ACCESS_SECRET=hoge
 
 ## Configuration (`config.json`)
 
-Prepare a `config.json` at the project root following this schema:
+Prepare a `config.json` at the project root following `config.schema.json`:
+
+> ***Do not set too small `view_thresholds` especially you are enabling Twitter.***
+> If you set like [1, 2, 3] and the view counts jump from 0 to 5 in an hour, this script will post 3 Tweets at once, which may easiy hit Twitter API rate limit.
 
 ```json
 {
   "subscriber_thresholds": [1000, 5000],
   "view_thresholds": [10000, 50000],
   "channels": [
-    { "id": "UCxxxxxxxxxxxx", "desc": "Official Channel" }
+    {
+      "id": "UCxxxxxxxxxxxx",
+      "desc": "Official Channel",
+      "twitter_enabled": false
+    }
   ],
   "playlists": [
-    { "id": "PLxxxxxxxxxxxx", "desc": "New Releases" }
+    {
+    "id": "PLxxxxxxxxxxxx",
+    "desc": "New Releases",
+    "twitter_enabled": true}
   ]
 }
 ```
 
-## Local One-Shot Execution
-
-1. Install dependencies:
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-2. Export environment variables or use a `.env` file.
-3. Run:
-
-   ```bash
-   python monitor.py
-   ```
-
-On first run, the script saves the initial state without sending notifications.
-
-## Docker Compose for Continuous Monitoring
+## Execution
 
 1. Build and start the service:
 
    ```bash
    docker compose up -d --build
    ```
-2. The container will run the monitor script automatically.
-  1. The first job runs once the container is running and does so every 00 minute of every hour.
-3. Logs are handled by Docker and state written to `./data/data.json`.
+2. The container will run the initial scan for the first time. This time the script will not send any notification eather to Discord/Twitter.
+3. After the initial scan, states are saved to `data/data.json` and re-runs at 00 minute of every hour.
 
 To stop:
 
