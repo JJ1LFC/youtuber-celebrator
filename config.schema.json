@@ -3,6 +3,12 @@
   "title": "YouTuber Monitor Config Schema",
   "type": "object",
   "properties": {
+    "log_level": {
+      "type": "string",
+      "enum": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+      "default": "WARNING",
+      "description": "Log level"
+    },
     "subscriber_thresholds": {
       "type": "array",
       "items": { "type": "integer", "minimum": 1 },

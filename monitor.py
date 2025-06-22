@@ -12,12 +12,6 @@ import requests
 import schedule
 from requests_oauthlib import OAuth1
 
-# Logging configuration
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    datefmt='%Y-%m-%dT%H:%M:%S%z'
-)
 
 # Environment variables
 YOUTUBE_API_KEY: Optional[str]      = os.getenv("YOUTUBE_API_KEY")
@@ -225,9 +219,18 @@ def compare_and_notify(
 
 
 def main() -> None:
-    logging.info("=== Script start ===")
-    cfg       = load_json("config.json")
-    out_file  = "/app/data/data.json"
+    cfg = load_json("config.json")
+    level_name = cfg.get("log_level", "WARNING").upper()
+    numeric_level = getattr(logging, level_name, logging.WARNING)
+    logging.basicConfig(
+        level=numeric_level,
+        format='%(asctime)s [%(levelname)s] %(message)s',
+        datefmt='%Y-%m-%dT%H:%M:%S%z',
+        force=True
+    )
+    logging.info(f"=== Script start (log_level={level_name}) ===")
+
+    out_file = "/app/data/data.json"
     prev_data = load_json(out_file)
 
     # Initial run
